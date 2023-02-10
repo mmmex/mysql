@@ -1,0 +1,126 @@
+---
+- name: mysql-config | master | ensure anonymous users are not in the database on master
+  mysql_user:
+    name: ''
+    host: "{{ item }}"
+    login_user: root
+    login_password: "{{ percona_server_root_password }}"
+    state: absent
+  with_items:
+  - "{{ ansible_hostname }}"
+  - localhost
+  when: server_role == "master"
+
+- name: mysql-config | slave | ensure mysql is stop on slave
+  ansible.builtin.systemd:
+    name: mysql
+    state: stopped
+  when: server_role == "slave"
+
+- name: mysql-config | slave | configure mysqld.cnf file for slave
+  ini_file:
+    dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+    section: mysqld
+    option: "{{ item.key }}"
+    value: "{{ item.value }}"
+    mode: 0644
+    backup: yes
+  with_dict: "{{ percona_server_config }}"
+  when: server_role == "slave"
+
+- name: mysql-config | slave | delete folder /var/lib/mysql on slave
+  ansible.builtin.file:
+    path: /var/lib/mysql
+    state: absent
+  when: server_role == "slave"
+
+- name: mysql-config | slave | create folder /var/lib/mysql on slave
+  ansible.builtin.file:
+    path: /var/lib/mysql
+    state: directory
+  when: server_role == "slave"
+
+- name: mysql-config | slave | copy from master directory /var/lib/mysql to slave
+  shell: |
+    ssh mysqlmaster "xtrabackup --host=127.0.0.1 --port=3306 --user=root --password={{ percona_server_root_password }} \
+    --backup --stream=xbstream" | xbstream -x -C /var/lib/mysql
+    xtrabackup --prepare --target-dir=/var/lib/mysql
+  when: server_role == "slave"
+
+- name: mysql-config | slave | chown permissions /var/lib/mysql
+  ansible.builtin.file:
+    dest: /var/lib/mysql
+    owner: mysql
+    group: mysql
+    recurse: yes
+  when: server_role == "slave"
+
+- name: mysql-config | slave | start mysql unit on slave
+  ansible.builtin.systemd:
+    name: mysql
+    state: started
+  when: server_role == "slave"
+
+# - name: xtrabackup_binlog_info - filename
+#   ansible.builtin.shell: cat /var/lib/mysql/xtrabackup_binlog_info | awk '{ print $1 }'
+#   register: bl_file
+#   when: server_role == "slave"
+
+# - name: xtrabackup_binlog_info - position
+#   ansible.builtin.shell: cat /var/lib/mysql/xtrabackup_binlog_info | awk '{ print $2 }'
+#   register: bl_pos
+#   when: server_role == "slave"
+
+- name: mysql-config | slave | change user and start replica
+  ansible.builtin.shell: |
+    mysql -e "CHANGE REPLICATION SOURCE TO 
+      SOURCE_HOST='mysqlmaster',
+      SOURCE_USER = 'replica',
+      SOURCE_PASSWORD = 'Otus2022!',
+      SOURCE_AUTO_POSITION = 1;"
+    mysql -e "START REPLICA;"
+  # environment:
+  #   MYSQL_PWD: "{{ percona_server_root_password }}"
+  when: server_role == "slave"
+
+- name: mysql-config | master | configure mysqld.cnf for master
+  ini_file:
+    dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+    section: mysqld
+    option: "{{ item.key }}"
+    value: "{{ item.value }}"
+    mode: 0644
+    backup: yes
+  with_dict: "{{ percona_server_config }}"
+  notify:
+    - restart mysql
+  when: server_role == "master"
+
+- name: mysql-config | master | ensure databases exists
+  mysql_db:
+    name: "{{ item.name }}"
+    encoding: "{{ item.encoding | default('utf8') }}"
+    login_user: root
+    login_password: "{{ percona_server_root_password }}"
+    state: "{{ item.state | default('present') }}"
+  with_items: "{{ percona_server_databases }}"
+  when: item.name is defined and item.name != "" and server_role == "master"
+
+- name: mysql-config | master | ensure database users exists
+  mysql_user:
+    name: "{{ item.name }}"
+    password: "{{ item.password | default(item.name) }}"
+    host: "{{ item.host | default('localhost') }}"
+    priv: "{{ item.priv }}"
+    login_user: root
+    login_password: "{{ percona_server_root_password }}"
+    state: "{{ item.state | default('present') }}"
+  with_items: "{{ percona_server_users }}"
+  when: item.name is defined and item.name != "" and server_role == "master"
+
+- name: mysql-config | master | grant replication slave to user replica
+  shell: |
+    mysql -e "GRANT REPLICATION SLAVE ON *.* TO 'replica'@'192.168.100.12'; FLUSH PRIVILEGES;"
+  # environment:
+  #   MYSQL_PWD: "{{ percona_server_root_password }}"
+  when: server_role == "master"

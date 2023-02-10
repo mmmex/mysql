@@ -1,0 +1,13 @@
+[mysql_cluster]
+mysqlmaster
+mysqlslave
+
+[master]
+mysqlmaster ansible_host=192.168.100.11 ansible_user=vagrant ansible_ssh_private_key_file=../.vagrant/machines/mysqlmaster/virtualbox/private_key
+
+[slave]
+mysqlslave ansible_host=192.168.100.12 ansible_user=vagrant ansible_ssh_private_key_file=../.vagrant/machines/mysqlslave/virtualbox/private_key
+
+[all:vars]
+ansible_ssh_user=vagrant
+ansible_ssh_private_key_file=ansible/insecure_private_key

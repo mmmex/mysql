@@ -1,0 +1,19 @@
+---
+- name: set root password
+  shell: |
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH caching_sha2_password BY '{{ percona_server_root_password }}';
+    FLUSH PRIVILEGES;"
+  # mysql_user: 
+  #   name: root
+  #   host: "{{ item }}"
+  #   password: "{{ percona_server_root_password }}"
+  #   # plugin: caching_sha2_password
+  # with_items:
+  #   - 127.0.0.1
+  #   - ::1
+  #   - localhost
+
+- name: restart mysql
+  service: 
+    name: mysql
+    state: restarted

@@ -1,0 +1,62 @@
+---
+- name: depend | set timezone Europe/Moscow
+  ansible.builtin.timezone:
+    name: Europe/Moscow
+
+- name: depend | install dependencies
+  ansible.builtin.apt:
+    name:
+      - gnupg2
+      - lsb-release
+      - curl
+      - wget
+      - nano
+      - mc
+      - pbzip2
+      - python3-mysqldb
+    update_cache: true
+
+- name: depend | install a .deb package from the internet
+  ansible.builtin.apt:
+    deb: https://repo.percona.com/apt/percona-release_latest.generic_all.deb
+
+- name: depend | enable percona repository
+  ansible.builtin.command: percona-release setup -y pdps-8.0
+
+- name: depend | install percona server
+  ansible.builtin.apt:
+    name: 
+    - percona-server-server
+    - percona-xtrabackup-80
+    - qpress
+    update_cache: true
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  notify:
+    - set root password
+
+- name: depend | touch .my.cnf
+  ansible.builtin.file:
+    path: ~/.my.cnf
+    state: touch
+    mode: u=rw
+
+- name: depend | make .my.cnf
+  ansible.builtin.ini_file:
+    dest: ~/.my.cnf
+    section: client
+    option: password
+    value: "{{ percona_server_root_password }}"
+    mode: 0600
+    backup: no
+
+- name: depend | recommend after installing server
+  shell: |
+    mysql -e "CREATE FUNCTION fnv1a_64 RETURNS INTEGER SONAME 'libfnv1a_udf.so'"
+    mysql -e "CREATE FUNCTION fnv_64 RETURNS INTEGER SONAME 'libfnv_udf.so'"
+    mysql -e "CREATE FUNCTION murmur_hash RETURNS INTEGER SONAME 'libmurmur_udf.so'"
+  # environment:
+  #   MYSQL_PWD: "{{ percona_server_root_password }}"
+  ignore_errors: true
+  no_log: true
+

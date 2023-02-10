@@ -1,0 +1,46 @@
+---
+- name: Generate ssh key for "{{ ssh_key_user }}"
+  user: 
+    name: "{{ ssh_key_user }}"
+    generate_ssh_key: yes
+    ssh_key_type: ed25519
+    ssh_key_file: .ssh/id_ed25519
+    state: present
+  register: ssh_key
+
+- name: Fetch key files from remote servers to ansible server
+  fetch:
+    src: "~{{ ssh_key_user }}/.ssh/id_ed25519.pub"
+    dest: "files/{{ ansible_facts['hostname'] }}-id_ed25519.pub"
+    flat: true
+  changed_when: false
+
+- name: Copy key files and add to authorized_keys
+  authorized_key:
+    user: "{{ ssh_key_user }}"
+    state: present
+    key: "{{ lookup('pipe','cat files/*id_ed25519.pub') }}"
+    exclusive: false
+
+  # known_hosts
+- name: known_hosts | for each host, scan for its ssh public key
+  command: "ssh-keyscan -ted25519 -p 22 {{ item }}"
+  loop: "{{ groups['all'] }}"
+  register: ssh_known_host_results
+  changed_when: false
+
+# - name: debug
+#   debug:
+#     var: groups['all']ssh_known_host_results
+#     verbosity: 2
+
+- name: known_hosts | for each host, add/update the public key in the "~{{ ssh_key_user }}/.ssh/known_hosts"
+  become: true
+  become_user: "{{ ssh_key_user }}"
+  known_hosts:
+    name: "{{ item.item }}"
+    key: "{{ item.stdout }}"
+    path: "~{{ ssh_key_user }}/.ssh/known_hosts"
+  no_log: true
+  loop: "{{ ssh_known_host_results.results }}"
+  ignore_errors: true

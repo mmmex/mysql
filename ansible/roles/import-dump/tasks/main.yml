@@ -1,0 +1,17 @@
+---
+- name: import-dump | slave | add exclude for replication
+  ansible.builtin.shell: |
+    mysql -e "
+      stop slave sql_thread;
+      CHANGE REPLICATION FILTER REPLICATE_WILD_IGNORE_TABLE = ('bet.events_on_demand', 'bet.v_same_event');
+      start slave sql_thread;"
+  # environment:
+  #   MYSQL_PWD: "{{ percona_server_root_password }}"
+  when: ansible_facts['hostname'] == "mysqlslave"
+
+- name: import-dump | master | import from bet-195395-623055.dmp to bet database
+  ansible.builtin.shell: |
+    mysql bet < /vagrant/ansible/files/bet-195395-623055.dmp
+  # environment:
+  #   MYSQL_PWD: "{{ percona_server_root_password }}"
+  when: ansible_facts['hostname'] == "mysqlmaster"

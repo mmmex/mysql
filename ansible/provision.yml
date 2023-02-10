@@ -1,0 +1,51 @@
+---
+- name: Depend all hosts
+  become: true
+  hosts: all
+  vars_files:
+    - vars/main.yml
+  roles:
+    - role: etc_hosts
+    - role: depend
+    - role: ssh-keys
+
+- name: Setup master
+  become: true
+  hosts: mysqlmaster
+  vars_files:
+    - vars/main.yml
+  roles:
+    - role: mysql-config
+      server_role: "master"
+      percona_server_users:
+      - { name: "replica", host: "192.168.100.12", password: "Otus2022!", priv: "*.*:REPLICATION CLIENT" }
+      percona_server_databases:
+      - { name: "bet" }
+      percona_server_config:
+        server_id: "1"
+        read_only: "OFF"
+        gtid_mode: "ON"
+        enforce_gtid_consistency: "ON"
+
+- name: Setup slave
+  become: true
+  hosts: mysqlslave
+  vars_files:
+    - vars/main.yml
+  roles:
+    - role: mysql-config
+      server_role: "slave"
+      percona_server_config:
+        server_id: "2"
+        read_only: "ON"
+        gtid_mode: "ON"
+        enforce_gtid_consistency: "ON"
+
+- name: Finish all hosts
+  become: true
+  hosts: all
+  vars_files:
+    - vars/main.yml
+  roles:
+    - role: finish-deploy
+    - role: import-dump
